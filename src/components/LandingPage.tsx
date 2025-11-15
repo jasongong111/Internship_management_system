@@ -76,6 +76,12 @@ export function LandingPage({ onLogin }: LandingPageProps) {
                 </p>
                 <div className="flex flex-col gap-1.5 sm:gap-2 text-xs sm:text-sm">
                   <a
+                    href="/?demo=evaluation-links"
+                    className="text-[#003366] hover:underline font-medium"
+                  >
+                    → View All Evaluation Link Examples (Demo Page)
+                  </a>
+                  <a
                     href="/?evaluation=demo"
                     className="text-[#003366] hover:underline"
                     target="_blank"

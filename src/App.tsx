@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { LandingPage } from "./components/LandingPage";
 import { StudentPortal } from "./components/student/StudentPortal";
 import { StaffPortal } from "./components/staff/StaffPortal";
 import { EmployerPortal } from "./components/employer/EmployerPortal";
+import { EvaluationLinkDemo } from "./components/employer/EvaluationLinkDemo";
 
 export type UserRole =
   | "student"
@@ -21,13 +22,20 @@ export interface User {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [evaluationToken, setEvaluationToken] = useState<string | null>(null);
+  const [showDemo, setShowDemo] = useState(false);
 
   useEffect(() => {
-    // Check if this is an employer evaluation access
+    // Check if this is an employer evaluation access or demo page
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('evaluation');
+    const demo = urlParams.get('demo');
+    
     if (token) {
       setEvaluationToken(token);
+    }
+    
+    if (demo === 'evaluation-links') {
+      setShowDemo(true);
     }
   }, []);
 
@@ -55,6 +63,11 @@ export default function App() {
   const handleLogout = () => {
     setUser(null);
   };
+
+  // Show evaluation link demo page
+  if (showDemo) {
+    return <EvaluationLinkDemo />;
+  }
 
   // Employer portal access via evaluation token
   if (evaluationToken) {

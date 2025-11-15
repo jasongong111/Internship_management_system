@@ -8,13 +8,15 @@ import { ReportList } from './ReportList';
 import { SubmitReport } from './SubmitReport';
 import { Resources } from './Resources';
 import { Profile } from './Profile';
+import { EvaluationList } from './EvaluationList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { 
   LayoutDashboard, 
   FileCheck, 
   FileText, 
   BookOpen, 
-  User as UserIcon 
+  User as UserIcon,
+  CheckCircle2
 } from 'lucide-react';
 
 interface StudentPortalProps {
@@ -28,6 +30,7 @@ export type StudentView =
   | 'submit-endorsement'
   | 'reports'
   | 'submit-report'
+  | 'evaluations'
   | 'resources'
   | 'profile';
 
@@ -58,7 +61,7 @@ export function StudentPortal({ user, onLogout }: StudentPortalProps) {
       
       <div className="container mx-auto px-4 py-4 sm:py-6">
         <Tabs value={getActiveTab()} onValueChange={handleTabChange} className="space-y-4 sm:space-y-6">
-          <TabsList className="grid w-full grid-cols-5 max-w-4xl text-xs sm:text-sm">
+          <TabsList className="grid w-full grid-cols-6 max-w-5xl text-xs sm:text-sm">
             <TabsTrigger value="dashboard" className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3">
               <LayoutDashboard className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Dashboard</span>
@@ -73,6 +76,11 @@ export function StudentPortal({ user, onLogout }: StudentPortalProps) {
               <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden md:inline">Work Reports</span>
               <span className="md:hidden">Reports</span>
+            </TabsTrigger>
+            <TabsTrigger value="evaluations" className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3">
+              <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Evaluations</span>
+              <span className="sm:hidden">Eval</span>
             </TabsTrigger>
             <TabsTrigger value="resources" className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3">
               <BookOpen className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -103,6 +111,10 @@ export function StudentPortal({ user, onLogout }: StudentPortalProps) {
             ) : (
               <ReportList user={user} onSubmitNew={() => setCurrentView('submit-report')} />
             )}
+          </TabsContent>
+
+          <TabsContent value="evaluations">
+            <EvaluationList user={user} />
           </TabsContent>
 
           <TabsContent value="resources">

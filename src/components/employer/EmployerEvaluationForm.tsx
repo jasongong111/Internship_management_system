@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
@@ -7,8 +7,10 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Slider } from "../ui/slider";
 import { Checkbox } from "../ui/checkbox";
 import { Alert, AlertDescription } from "../ui/alert";
-import { CheckCircle2, Building2, User, Briefcase } from "lucide-react";
+import { CheckCircle2, Building2, User, Briefcase, Save, Calendar, Lock } from "lucide-react";
 import { EmployerEvaluation } from "../../types";
+import { saveDraft, loadDraft, deleteDraft } from "../../utils/draftStorage";
+import { toast } from "sonner@2.0.3";
 
 interface EvaluationFormProps {
   studentName: string;
@@ -18,6 +20,10 @@ interface EvaluationFormProps {
   supervisorName: string;
   supervisorEmail: string;
   endorsementId: string;
+  startDate?: string;
+  endDate?: string;
+  evaluationToken: string;
+  isReadOnly?: boolean;
   onSubmit: (evaluation: Omit<EmployerEvaluation, 'id' | 'submittedDate'>) => void;
 }
 
@@ -31,6 +37,10 @@ export function EmployerEvaluationForm({
   supervisorName,
   supervisorEmail,
   endorsementId,
+  startDate,
+  endDate,
+  evaluationToken,
+  isReadOnly = false,
   onSubmit,
 }: EvaluationFormProps) {
   const [submitted, setSubmitted] = useState(false);
@@ -53,9 +63,63 @@ export function EmployerEvaluationForm({
 
   const [wouldHireAgain, setWouldHireAgain] = useState<'yes' | 'no' | 'maybe'>('yes');
   const [wouldRecommend, setWouldRecommend] = useState(true);
+  const [draftSaved, setDraftSaved] = useState(false);
+
+  // Load draft on mount
+  useEffect(() => {
+    if (!isReadOnly && evaluationToken) {
+      const draft = loadDraft(evaluationToken);
+      if (draft) {
+        setRatings(draft.ratings);
+        setComments(draft.comments);
+        setWouldHireAgain(draft.wouldHireAgain);
+        setWouldRecommend(draft.wouldRecommend);
+        setDraftSaved(true);
+        toast.info("Draft loaded", {
+          description: "Your previously saved draft has been restored.",
+        });
+      }
+    }
+  }, [evaluationToken, isReadOnly]);
+
+  // Auto-save draft when form changes (debounced)
+  useEffect(() => {
+    if (isReadOnly || submitted || !evaluationToken) return;
+
+    const timeoutId = setTimeout(() => {
+      saveDraft(evaluationToken, {
+        endorsementId,
+        ratings,
+        comments,
+        wouldHireAgain,
+        wouldRecommend,
+      });
+      setDraftSaved(true);
+    }, 2000); // Save 2 seconds after last change
+
+    return () => clearTimeout(timeoutId);
+  }, [ratings, comments, wouldHireAgain, wouldRecommend, evaluationToken, endorsementId, isReadOnly, submitted]);
+
+  const handleSaveDraft = () => {
+    saveDraft(evaluationToken, {
+      endorsementId,
+      ratings,
+      comments,
+      wouldHireAgain,
+      wouldRecommend,
+    });
+    setDraftSaved(true);
+    toast.success("Draft saved", {
+      description: "Your progress has been saved. You can resume later.",
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (isReadOnly) {
+      return;
+    }
     
     const evaluation: Omit<EmployerEvaluation, 'id' | 'submittedDate'> = {
       endorsementId,
@@ -71,6 +135,9 @@ export function EmployerEvaluationForm({
       wouldRecommend,
     };
 
+    // Delete draft after successful submission
+    deleteDraft(evaluationToken);
+    
     onSubmit(evaluation);
     setSubmitted(true);
   };
@@ -162,9 +229,27 @@ export function EmployerEvaluationForm({
                   {company}
                 </p>
               </div>
+              {startDate && endDate && (
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-600 text-xs sm:text-sm">Internship Period</Label>
+                  <p className="mt-1 flex items-center gap-2 text-sm sm:text-base">
+                    <Calendar className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                    {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
+
+        {isReadOnly && (
+          <Alert className="mb-4 sm:mb-6">
+            <Lock className="h-4 w-4" />
+            <AlertDescription className="text-sm sm:text-base">
+              This evaluation has already been submitted and is now read-only.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* Performance Ratings */}
@@ -189,12 +274,13 @@ export function EmployerEvaluationForm({
                   <Slider
                     value={[value]}
                     onValueChange={(values) =>
-                      setRatings({ ...ratings, [key]: values[0] })
+                      !isReadOnly && setRatings({ ...ratings, [key]: values[0] })
                     }
                     min={1}
                     max={5}
                     step={1}
                     className="w-full"
+                    disabled={isReadOnly}
                   />
                   <div className="flex justify-between text-[10px] sm:text-xs text-gray-500">
                     <span>Poor</span>
@@ -224,11 +310,12 @@ export function EmployerEvaluationForm({
                   placeholder="Describe the student's main strengths and positive attributes..."
                   value={comments.strengths}
                   onChange={(e) =>
-                    setComments({ ...comments, strengths: e.target.value })
+                    !isReadOnly && setComments({ ...comments, strengths: e.target.value })
                   }
-                  required
+                  required={!isReadOnly}
                   rows={4}
                   className="resize-none text-sm sm:text-base"
+                  disabled={isReadOnly}
                 />
               </div>
 
@@ -239,11 +326,12 @@ export function EmployerEvaluationForm({
                   placeholder="Describe areas where the student could improve..."
                   value={comments.areasForImprovement}
                   onChange={(e) =>
-                    setComments({ ...comments, areasForImprovement: e.target.value })
+                    !isReadOnly && setComments({ ...comments, areasForImprovement: e.target.value })
                   }
-                  required
+                  required={!isReadOnly}
                   rows={4}
                   className="resize-none text-sm sm:text-base"
+                  disabled={isReadOnly}
                 />
               </div>
 
@@ -254,10 +342,11 @@ export function EmployerEvaluationForm({
                   placeholder="Any other feedback or observations..."
                   value={comments.additionalComments}
                   onChange={(e) =>
-                    setComments({ ...comments, additionalComments: e.target.value })
+                    !isReadOnly && setComments({ ...comments, additionalComments: e.target.value })
                   }
                   rows={4}
                   className="resize-none text-sm sm:text-base"
+                  disabled={isReadOnly}
                 />
               </div>
             </CardContent>
@@ -273,7 +362,8 @@ export function EmployerEvaluationForm({
                 <Label className="text-sm sm:text-base">Would you hire this student again? *</Label>
                 <RadioGroup
                   value={wouldHireAgain}
-                  onValueChange={(value) => setWouldHireAgain(value as 'yes' | 'no' | 'maybe')}
+                  onValueChange={(value) => !isReadOnly && setWouldHireAgain(value as 'yes' | 'no' | 'maybe')}
+                  disabled={isReadOnly}
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="yes" id="hire-yes" />
@@ -300,7 +390,8 @@ export function EmployerEvaluationForm({
                 <Checkbox
                   id="recommend"
                   checked={wouldRecommend}
-                  onCheckedChange={(checked) => setWouldRecommend(checked as boolean)}
+                  onCheckedChange={(checked) => !isReadOnly && setWouldRecommend(checked as boolean)}
+                  disabled={isReadOnly}
                 />
                 <Label htmlFor="recommend" className="cursor-pointer text-sm sm:text-base">
                   I would recommend this student to other employers
@@ -327,15 +418,32 @@ export function EmployerEvaluationForm({
           </Card>
 
           {/* Submit Button */}
-          <div className="flex justify-end gap-4 sticky bottom-0 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent pt-4 pb-2">
-            <Button
-              type="submit"
-              className="bg-[#003366] hover:bg-[#004488] text-white px-6 sm:px-8 w-full sm:w-auto"
-              size="lg"
-            >
-              Submit Evaluation
-            </Button>
-          </div>
+          {!isReadOnly && (
+            <div className="flex flex-col sm:flex-row justify-between gap-4 sticky bottom-0 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent pt-4 pb-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSaveDraft}
+                className="w-full sm:w-auto"
+                size="lg"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Draft
+              </Button>
+              {draftSaved && (
+                <span className="text-xs sm:text-sm text-gray-500 self-center">
+                  Draft auto-saved
+                </span>
+              )}
+              <Button
+                type="submit"
+                className="bg-[#003366] hover:bg-[#004488] text-white px-6 sm:px-8 w-full sm:w-auto"
+                size="lg"
+              >
+                Submit Evaluation
+              </Button>
+            </div>
+          )}
         </form>
       </main>
     </div>

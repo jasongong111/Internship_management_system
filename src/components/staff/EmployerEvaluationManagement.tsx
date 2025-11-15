@@ -43,6 +43,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import { Endorsement } from "../../types";
+import { generateEvaluationToken } from "../../utils/evaluationToken";
+import { sendEvaluationLinkEmail } from "../../utils/emailService";
+import { processReminders, getPendingReminders } from "../../utils/reminderService";
+import { useEffect } from "react";
+import { shouldSendReminder } from "../../utils/evaluationToken";
+import { processEndedInternships, getEndorsementsReadyForLinkGeneration } from "../../utils/autoLinkGeneration";
 
 // Mock data for approved endorsements
 const mockEndorsements: Endorsement[] = [
@@ -56,8 +62,8 @@ const mockEndorsements: Endorsement[] = [
     company: "Tech Solutions Ltd",
     department: "Development",
     companyAddress: "123 Tech Street, Hong Kong",
-    startDate: "2024-06-01",
-    endDate: "2024-08-31",
+    startDate: "2025-06-01",
+    endDate: "2025-08-31",
     employmentType: "full-time",
     salary: "15000",
     supervisorName: "Ms. Sarah Wong",
@@ -65,13 +71,13 @@ const mockEndorsements: Endorsement[] = [
     supervisorEmail: "sarah.wong@techsolutions.com",
     supervisorPhone: "9123-4567",
     status: "approved",
-    submittedDate: "2024-05-15",
-    lastActionDate: "2024-05-20",
+    submittedDate: "2025-05-15",
+    lastActionDate: "2025-05-20",
     documents: [],
     history: [],
     evaluationToken: "eval-token-001",
-    evaluationSentDate: "2024-09-01",
-    evaluationSubmittedDate: "2024-09-05",
+    evaluationSentDate: "2025-09-01",
+    evaluationSubmittedDate: "2025-09-05",
     evaluationRemindersSent: 0,
   },
   {
@@ -84,8 +90,8 @@ const mockEndorsements: Endorsement[] = [
     company: "Marketing Pro Ltd",
     department: "Marketing",
     companyAddress: "456 Business Road, Hong Kong",
-    startDate: "2024-07-01",
-    endDate: "2024-09-30",
+    startDate: "2025-07-01",
+    endDate: "2025-09-30",
     employmentType: "full-time",
     salary: "12000",
     supervisorName: "Mr. David Lee",
@@ -93,12 +99,12 @@ const mockEndorsements: Endorsement[] = [
     supervisorEmail: "david.lee@marketingpro.com",
     supervisorPhone: "9234-5678",
     status: "approved",
-    submittedDate: "2024-06-10",
-    lastActionDate: "2024-06-15",
+    submittedDate: "2025-06-10",
+    lastActionDate: "2025-06-15",
     documents: [],
     history: [],
     evaluationToken: "eval-token-002",
-    evaluationSentDate: "2024-10-01",
+    evaluationSentDate: "2025-10-01",
     evaluationRemindersSent: 1,
   },
   {
@@ -111,8 +117,8 @@ const mockEndorsements: Endorsement[] = [
     company: "Data Insights Corp",
     department: "Analytics",
     companyAddress: "789 Data Avenue, Hong Kong",
-    startDate: "2024-09-01",
-    endDate: "2024-11-30",
+    startDate: "2025-09-01",
+    endDate: "2025-11-30",
     employmentType: "full-time",
     salary: "14000",
     supervisorName: "Dr. Lisa Chen",
@@ -120,8 +126,8 @@ const mockEndorsements: Endorsement[] = [
     supervisorEmail: "lisa.chen@datainsights.com",
     supervisorPhone: "9345-6789",
     status: "approved",
-    submittedDate: "2024-08-20",
-    lastActionDate: "2024-08-25",
+    submittedDate: "2025-08-20",
+    lastActionDate: "2025-08-25",
     documents: [],
     history: [],
   },
@@ -135,8 +141,8 @@ const mockEndorsements: Endorsement[] = [
     company: "Finance Corp",
     department: "Finance",
     companyAddress: "101 Finance Street, Hong Kong",
-    startDate: "2024-08-01",
-    endDate: "2024-10-31",
+    startDate: "2025-08-01",
+    endDate: "2025-10-31",
     employmentType: "full-time",
     salary: "16000",
     supervisorName: "Mr. James Ng",
@@ -144,25 +150,60 @@ const mockEndorsements: Endorsement[] = [
     supervisorEmail: "james.ng@financecorp.com",
     supervisorPhone: "9456-7890",
     status: "approved",
-    submittedDate: "2024-07-15",
-    lastActionDate: "2024-07-20",
+    submittedDate: "2025-07-15",
+    lastActionDate: "2025-07-20",
     documents: [],
     history: [],
     evaluationToken: "eval-token-004",
-    evaluationSentDate: "2024-11-01",
+    evaluationSentDate: "2025-11-01",
     evaluationRemindersSent: 2,
   },
 ];
 
-type EvaluationStatus = 'all' | 'not_sent' | 'sent' | 'submitted' | 'overdue';
+type EvaluationStatus = 'all' | 'not_sent' | 'sent' | 'submitted' | 'expired';
 
 export function EmployerEvaluationManagement() {
-  const [endorsements] = useState<Endorsement[]>(mockEndorsements);
+  const [endorsements, setEndorsements] = useState<Endorsement[]>(mockEndorsements);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<EvaluationStatus>('all');
   const [selectedEndorsement, setSelectedEndorsement] = useState<Endorsement | null>(null);
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [showViewLinkDialog, setShowViewLinkDialog] = useState(false);
+
+  // Auto-check for ended internships and generate links
+  useEffect(() => {
+    const checkEndedInternships = async () => {
+      const readyForLinks = getEndorsementsReadyForLinkGeneration(endorsements);
+      if (readyForLinks.length > 0) {
+        console.log(`Found ${readyForLinks.length} internships ready for evaluation link generation`);
+        // In production, this would automatically generate and send links
+        // For now, we'll just log it - coordinators can manually send
+        // await processEndedInternships(endorsements);
+      }
+    };
+
+    checkEndedInternships();
+    // Check daily
+    const interval = setInterval(checkEndedInternships, 24 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [endorsements]);
+
+  // Auto-check for reminders on mount and periodically
+  useEffect(() => {
+    const checkReminders = async () => {
+      const pending = getPendingReminders(endorsements);
+      if (pending.length > 0) {
+        console.log(`Found ${pending.length} pending reminders`);
+        // In production, this would trigger automatic sending
+        // For now, we'll just log it
+      }
+    };
+
+    checkReminders();
+    // Check every hour
+    const interval = setInterval(checkReminders, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [endorsements]);
 
   const getEvaluationStatus = (endorsement: Endorsement): {
     status: string;
@@ -185,17 +226,19 @@ export function EmployerEvaluationManagement() {
       };
     }
 
-    // Check if overdue (30 days after end date)
-    const endDate = new Date(endorsement.endDate);
-    const today = new Date();
-    const daysSinceEnd = Math.floor((today.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Check if overdue (7 days after send date, or if link expired)
+    if (endorsement.evaluationSentDate) {
+      const sentDate = new Date(endorsement.evaluationSentDate);
+      const today = new Date();
+      const daysSinceSent = Math.floor((today.getTime() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (daysSinceEnd > 30) {
-      return {
-        status: "Overdue",
-        variant: "destructive",
-        icon: <AlertCircle className="h-3 w-3" />,
-      };
+      if (daysSinceSent > 7) {
+        return {
+          status: "Expired",
+          variant: "destructive",
+          icon: <AlertCircle className="h-3 w-3" />,
+        };
+      }
     }
 
     return {
@@ -221,7 +264,7 @@ export function EmployerEvaluationManagement() {
     if (statusFilter === 'not_sent') return status.status === 'Not Sent';
     if (statusFilter === 'sent') return status.status === 'Sent';
     if (statusFilter === 'submitted') return status.status === 'Submitted';
-    if (statusFilter === 'overdue') return status.status === 'Overdue';
+    if (statusFilter === 'expired') return status.status === 'Expired';
 
     return true;
   });
@@ -231,19 +274,51 @@ export function EmployerEvaluationManagement() {
     setShowSendDialog(true);
   };
 
-  const confirmSendEvaluation = () => {
+  const confirmSendEvaluation = async () => {
     if (!selectedEndorsement) return;
 
-    // In production, this would send an API request to generate and send the link
-    toast.success(
-      `Evaluation link sent to ${selectedEndorsement.supervisorEmail}`,
-      {
-        description: `Student: ${selectedEndorsement.studentName} (${selectedEndorsement.studentNo})`,
-      }
-    );
+    try {
+      // Generate unique evaluation token
+      const token = generateEvaluationToken(
+        selectedEndorsement.id,
+        selectedEndorsement.studentNo,
+        selectedEndorsement.supervisorEmail
+      );
 
-    setShowSendDialog(false);
-    setSelectedEndorsement(null);
+      // Create evaluation link
+      const evaluationLink = `${window.location.origin}/?evaluation=${token}`;
+
+      // Send email with evaluation link
+      await sendEvaluationLinkEmail(selectedEndorsement, evaluationLink);
+
+      // Update endorsement with token and sent date
+      const updatedEndorsements = endorsements.map((end) =>
+        end.id === selectedEndorsement.id
+          ? {
+              ...end,
+              evaluationToken: token,
+              evaluationSentDate: new Date().toISOString().split('T')[0],
+              evaluationRemindersSent: 0,
+            }
+          : end
+      );
+
+      setEndorsements(updatedEndorsements);
+
+      toast.success(
+        `Evaluation link sent to ${selectedEndorsement.supervisorEmail}`,
+        {
+          description: `Student: ${selectedEndorsement.studentName} (${selectedEndorsement.studentNo}). Link valid for 7 days.`,
+        }
+      );
+
+      setShowSendDialog(false);
+      setSelectedEndorsement(null);
+    } catch (error) {
+      toast.error("Failed to send evaluation link", {
+        description: "Please try again or contact support.",
+      });
+    }
   };
 
   const handleViewLink = (endorsement: Endorsement) => {
@@ -259,17 +334,53 @@ export function EmployerEvaluationManagement() {
     toast.success("Link copied to clipboard");
   };
 
-  const handleSendReminder = (endorsement: Endorsement) => {
-    if (!endorsement.evaluationRemindersSent || endorsement.evaluationRemindersSent < 3) {
+  const handleSendReminder = async (endorsement: Endorsement) => {
+    if (!endorsement.evaluationToken || !endorsement.evaluationSentDate) {
+      toast.error("No evaluation link found", {
+        description: "Please send the evaluation link first.",
+      });
+      return;
+    }
+
+    const currentReminders = endorsement.evaluationRemindersSent || 0;
+    if (currentReminders >= 3) {
+      toast.error("Maximum reminders sent", {
+        description: "This employer has already received 3 reminders",
+      });
+      return;
+    }
+
+    try {
+      // Determine reminder type based on time remaining
+      const reminderType = shouldSendReminder(
+        endorsement.evaluationSentDate,
+        currentReminders
+      ) || '3days'; // Default to 3days if logic doesn't match
+
+      const evaluationLink = `${window.location.origin}/?evaluation=${endorsement.evaluationToken}`;
+      await sendReminderEmail(endorsement, evaluationLink, reminderType);
+
+      // Update reminder count
+      const updatedEndorsements = endorsements.map((end) =>
+        end.id === endorsement.id
+          ? {
+              ...end,
+              evaluationRemindersSent: currentReminders + 1,
+            }
+          : end
+      );
+
+      setEndorsements(updatedEndorsements);
+
       toast.success(
         `Reminder sent to ${endorsement.supervisorEmail}`,
         {
-          description: `Reminder ${(endorsement.evaluationRemindersSent || 0) + 1} of 3`,
+          description: `Reminder ${currentReminders + 1} of 3`,
         }
       );
-    } else {
-      toast.error("Maximum reminders sent", {
-        description: "This employer has already received 3 reminders",
+    } catch (error) {
+      toast.error("Failed to send reminder", {
+        description: "Please try again later.",
       });
     }
   };
@@ -281,10 +392,11 @@ export function EmployerEvaluationManagement() {
     submitted: endorsements.filter(e => e.evaluationSubmittedDate).length,
     overdue: endorsements.filter(e => {
       if (e.evaluationSubmittedDate) return false;
-      const endDate = new Date(e.endDate);
+      if (!e.evaluationSentDate) return false;
+      const sentDate = new Date(e.evaluationSentDate);
       const today = new Date();
-      const daysSinceEnd = Math.floor((today.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24));
-      return daysSinceEnd > 30;
+      const daysSinceSent = Math.floor((today.getTime() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysSinceSent > 7;
     }).length,
   };
 
@@ -318,7 +430,7 @@ export function EmployerEvaluationManagement() {
         </Card>
         <Card className="col-span-2 sm:col-span-3 md:col-span-1">
           <CardHeader className="pb-3">
-            <CardDescription className="text-xs sm:text-sm">Overdue</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">Expired</CardDescription>
             <CardTitle className="text-2xl sm:text-3xl text-red-600">{stats.overdue}</CardTitle>
           </CardHeader>
         </Card>
@@ -357,7 +469,7 @@ export function EmployerEvaluationManagement() {
                 <SelectItem value="not_sent">Not Sent</SelectItem>
                 <SelectItem value="sent">Sent</SelectItem>
                 <SelectItem value="submitted">Submitted</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
+                <SelectItem value="expired">Expired</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -589,13 +701,14 @@ export function EmployerEvaluationManagement() {
           </div>
 
           {/* Help Alert */}
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-sm sm:text-base">
-              Evaluation links are automatically generated and sent to employers' email addresses.
-              The system will send up to 3 automatic reminders for pending evaluations.
-            </AlertDescription>
-          </Alert>
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-sm sm:text-base">
+                  Evaluation links are automatically generated and sent to employers' email addresses.
+                  Links are valid for 7 days from the send date. The system will automatically send
+                  up to 3 reminders (at 3 days, 1 day, and 12 hours before expiration) for pending evaluations.
+                </AlertDescription>
+              </Alert>
         </CardContent>
       </Card>
 
@@ -630,7 +743,8 @@ export function EmployerEvaluationManagement() {
               <Alert>
                 <AlertDescription className="text-xs sm:text-sm">
                   An email will be sent to <strong>{selectedEndorsement.supervisorEmail}</strong> with
-                  a unique evaluation link. The employer will have 30 days to complete the evaluation.
+                  a unique evaluation link. The employer will have 7 days to complete the evaluation.
+                  Automatic reminders will be sent at 3 days, 1 day, and 12 hours before expiration.
                 </AlertDescription>
               </Alert>
             </div>

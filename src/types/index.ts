@@ -88,3 +88,26 @@ export interface EmployerEvaluation {
   // Recommendation
   wouldRecommend: boolean;
 }
+
+export interface EvaluationDraft {
+  token: string;
+  endorsementId: string;
+  ratings: {
+    technicalSkills: number;
+    communicationSkills: number;
+    teamwork: number;
+    problemSolving: number;
+    workEthic: number;
+    adaptability: number;
+    initiative: number;
+    overallPerformance: number;
+  };
+  comments: {
+    strengths: string;
+    areasForImprovement: string;
+    additionalComments: string;
+  };
+  wouldHireAgain: 'yes' | 'no' | 'maybe';
+  wouldRecommend: boolean;
+  savedAt: string;
+}

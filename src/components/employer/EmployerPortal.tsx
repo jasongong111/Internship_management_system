@@ -4,6 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui
 import { Alert, AlertDescription } from "../ui/alert";
 import { AlertCircle, Clock } from "lucide-react";
 import { EmployerEvaluation, Endorsement } from "../../types";
+import { isTokenExpired, getDaysUntilExpiration } from "../../utils/evaluationToken";
+import { sendCoordinatorNotificationEmail, sendStudentNotificationEmail } from "../../utils/emailService";
+import { storeEvaluation } from "../../utils/evaluationStorage";
 
 interface EmployerPortalProps {
   evaluationToken: string;
@@ -25,8 +28,8 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
       company: "Tech Solutions Ltd",
       department: "Development",
       companyAddress: "123 Tech Street, Hong Kong",
-      startDate: "2024-06-01",
-      endDate: "2024-08-31",
+      startDate: "2025-06-01",
+      endDate: "2025-08-31",
       employmentType: "full-time",
       salary: "15000",
       supervisorName: "Ms. Sarah Wong",
@@ -34,13 +37,13 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
       supervisorEmail: "sarah.wong@techsolutions.com",
       supervisorPhone: "9123-4567",
       status: "approved",
-      submittedDate: "2024-05-15",
-      lastActionDate: "2024-05-20",
+      submittedDate: "2025-05-15",
+      lastActionDate: "2025-05-20",
       documents: [],
       history: [],
       evaluationToken: token,
-      evaluationSentDate: "2024-09-01",
-      evaluationSubmittedDate: "2024-09-05",
+      evaluationSentDate: "2025-09-01",
+      evaluationSubmittedDate: "2025-09-05",
       evaluationRemindersSent: 0,
     };
   }
@@ -56,8 +59,8 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
       company: "Marketing Pro Ltd",
       department: "Marketing",
       companyAddress: "456 Business Road, Hong Kong",
-      startDate: "2024-01-01",
-      endDate: "2024-03-31",
+      startDate: "2025-01-01",
+      endDate: "2025-03-31",
       employmentType: "full-time",
       salary: "12000",
       supervisorName: "Mr. David Lee",
@@ -70,7 +73,7 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
       documents: [],
       history: [],
       evaluationToken: token,
-      evaluationSentDate: "2024-04-01",
+      evaluationSentDate: "2025-04-01",
       evaluationRemindersSent: 3,
     };
   }
@@ -86,8 +89,8 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
     company: "Data Insights Corp",
     department: "Analytics",
     companyAddress: "789 Data Avenue, Hong Kong",
-    startDate: "2024-09-01",
-    endDate: "2024-11-30",
+    startDate: "2025-09-01",
+    endDate: "2025-11-30",
     employmentType: "full-time",
     salary: "14000",
     supervisorName: "Dr. Lisa Chen",
@@ -95,12 +98,12 @@ const getMockEndorsementByToken = (token: string): Endorsement | null => {
     supervisorEmail: "lisa.chen@datainsights.com",
     supervisorPhone: "9345-6789",
     status: "approved",
-    submittedDate: "2024-08-20",
-    lastActionDate: "2024-08-25",
+    submittedDate: "2025-08-20",
+    lastActionDate: "2025-08-25",
     documents: [],
     history: [],
     evaluationToken: token,
-    evaluationSentDate: "2024-12-01",
+    evaluationSentDate: "2025-12-01",
     evaluationRemindersSent: 0,
   };
 };
@@ -126,18 +129,26 @@ export function EmployerPortal({ evaluationToken }: EmployerPortalProps) {
           return;
         }
 
+        // Check if already submitted
         if (data.evaluationSubmittedDate) {
-          setError("This evaluation has already been submitted. Thank you for your participation.");
+          // Still load the form but in read-only mode
+          setEndorsement(data);
           return;
         }
 
-        // Check if evaluation period has expired (more than 30 days since end date)
-        const endDate = new Date(data.endDate);
-        const today = new Date();
-        const daysSinceEnd = Math.floor((today.getTime() - endDate.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (daysSinceEnd > 60) {
-          setError("This evaluation link has expired. Please contact the academic coordinator if you need assistance.");
+        // Check if link has expired (7 days from send date)
+        if (data.evaluationSentDate && isTokenExpired(data.evaluationSentDate)) {
+          const daysRemaining = getDaysUntilExpiration(data.evaluationSentDate);
+          setError(
+            `This evaluation link has expired. The link was valid for 7 days from the send date. ` +
+            `Please contact the academic coordinator if you need assistance.`
+          );
+          return;
+        }
+
+        // Check if link hasn't been sent yet
+        if (!data.evaluationSentDate) {
+          setError("This evaluation link has not been activated yet. Please wait for the email notification.");
           return;
         }
 
@@ -154,15 +165,33 @@ export function EmployerPortal({ evaluationToken }: EmployerPortalProps) {
 
   const handleSubmit = async (evaluation: Omit<EmployerEvaluation, 'id' | 'submittedDate'>) => {
     try {
-      // In production, this would send the evaluation to the backend
-      console.log("Submitting evaluation:", evaluation);
+      // Store the evaluation
+      const storedEvaluation = await storeEvaluation(evaluation);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Update endorsement to mark as submitted
+      if (endorsement) {
+        // In production, this would update the database
+        // For now, we'll update local state
+        setEndorsement({
+          ...endorsement,
+          evaluationSubmittedDate: storedEvaluation.submittedDate,
+        });
+      }
+      
+      // Send notifications
+      if (endorsement) {
+        // Notify coordinator
+        await sendCoordinatorNotificationEmail(endorsement, storedEvaluation.id);
+        
+        // Notify student (with link to view evaluation in student portal)
+        const studentEvaluationLink = `${window.location.origin}/#evaluations`;
+        await sendStudentNotificationEmail(endorsement, studentEvaluationLink);
+      }
       
       // The EmployerEvaluationForm component handles the success UI
     } catch (err) {
       setError("Failed to submit evaluation. Please try again.");
+      console.error("Evaluation submission error:", err);
     }
   };
 
@@ -226,16 +255,39 @@ export function EmployerPortal({ evaluationToken }: EmployerPortalProps) {
     return null;
   }
 
+  const isReadOnly = !!endorsement.evaluationSubmittedDate;
+  const daysRemaining = endorsement.evaluationSentDate 
+    ? getDaysUntilExpiration(endorsement.evaluationSentDate)
+    : 0;
+
   return (
-    <EmployerEvaluationForm
-      studentName={endorsement.studentName}
-      studentNo={endorsement.studentNo}
-      jobTitle={endorsement.jobTitle}
-      company={endorsement.company}
-      supervisorName={endorsement.supervisorName}
-      supervisorEmail={endorsement.supervisorEmail}
-      endorsementId={endorsement.id}
-      onSubmit={handleSubmit}
-    />
+    <>
+      {!isReadOnly && endorsement.evaluationSentDate && daysRemaining > 0 && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm">
+          <Alert>
+            <Clock className="h-4 w-4" />
+            <AlertDescription className="text-xs sm:text-sm">
+              {daysRemaining === 1 
+                ? "This link expires in 1 day"
+                : `This link expires in ${daysRemaining} days`}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+      <EmployerEvaluationForm
+        studentName={endorsement.studentName}
+        studentNo={endorsement.studentNo}
+        jobTitle={endorsement.jobTitle}
+        company={endorsement.company}
+        supervisorName={endorsement.supervisorName}
+        supervisorEmail={endorsement.supervisorEmail}
+        endorsementId={endorsement.id}
+        startDate={endorsement.startDate}
+        endDate={endorsement.endDate}
+        evaluationToken={evaluationToken}
+        isReadOnly={isReadOnly}
+        onSubmit={handleSubmit}
+      />
+    </>
   );
 }
